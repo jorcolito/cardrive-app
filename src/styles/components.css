@@ -657,7 +657,8 @@
 .client-form,
 .reservation-form,
 .contract-form,
-.return-form {
+.return-form,
+.payment-form {
   display: grid;
   gap: 18px;
   padding: 22px;
@@ -674,6 +675,7 @@
 .reservation-form label,
 .contract-form label,
 .return-form label,
+.payment-form label,
 .full-field {
   display: grid;
   gap: 8px;
@@ -694,7 +696,10 @@
 .contract-form textarea,
 .return-form input,
 .return-form select,
-.return-form textarea {
+.return-form textarea,
+.payment-form input,
+.payment-form select,
+.payment-form textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -709,7 +714,8 @@
 .client-form textarea,
 .reservation-form textarea,
 .contract-form textarea,
-.return-form textarea {
+.return-form textarea,
+.payment-form textarea {
   min-height: 108px;
   resize: vertical;
 }
@@ -727,7 +733,10 @@
 .contract-form textarea:focus,
 .return-form input:focus,
 .return-form select:focus,
-.return-form textarea:focus {
+.return-form textarea:focus,
+.payment-form input:focus,
+.payment-form select:focus,
+.payment-form textarea:focus {
   border-color: var(--color-accent);
   outline: 3px solid rgba(233, 69, 96, 0.16);
 }
@@ -794,6 +803,12 @@
   min-height: 36px;
   padding: 8px 10px;
   white-space: nowrap;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .modal-actions {
@@ -903,7 +918,8 @@
   .client-form,
   .reservation-form,
   .contract-form,
-  .return-form {
+  .return-form,
+  .payment-form {
     padding-right: 18px;
     padding-left: 18px;
   }

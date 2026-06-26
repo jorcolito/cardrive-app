@@ -24,6 +24,12 @@ const fuelLabels = {
   FULL: 'Lleno',
 };
 
+const paymentMethodLabels = {
+  CASH: 'Efectivo',
+  CARD: 'Tarjeta',
+  TRANSFER: 'Transferencia',
+};
+
 let contracts = [];
 let clients = [];
 let vehicles = [];
@@ -31,6 +37,7 @@ let reservations = [];
 let showContractsToast;
 let contractsPageController;
 let selectedReturnContract;
+let selectedPaymentContract;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -184,6 +191,10 @@ function getFuelLabel(fuel) {
   return fuelLabels[fuel] ?? '—';
 }
 
+function getPaymentMethodLabel(method) {
+  return paymentMethodLabels[method] ?? '—';
+}
+
 function getContractClient(contract) {
   return contract?.client ?? {};
 }
@@ -255,6 +266,12 @@ function renderFuelOptions() {
     .join('');
 }
 
+function renderPaymentMethodOptions() {
+  return Object.entries(paymentMethodLabels)
+    .map(([value, label]) => `<option value="${value}">${label}</option>`)
+    .join('');
+}
+
 function renderContractRows(items) {
   return items
     .map((contract) => {
@@ -263,9 +280,14 @@ function renderContractRows(items) {
       const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ');
       const statusClass = getStatusClass(contract.status);
       const financialClass = getStatusClass(contract.financial_status);
-      const action = contract.status === 'ACTIVE'
-        ? `<button class="secondary-button table-action" type="button" data-contract-return="${escapeHtml(contract.id)}">Registrar devolución</button>`
-        : '—';
+      const actions = [
+        contract.status === 'ACTIVE'
+          ? `<button class="secondary-button table-action" type="button" data-contract-return="${escapeHtml(contract.id)}">Registrar devolución</button>`
+          : '',
+        contract.status !== 'CANCELLED'
+          ? `<button class="secondary-button table-action" type="button" data-contract-payment="${escapeHtml(contract.id)}">Registrar pago</button>`
+          : '',
+      ].filter(Boolean).join('');
 
       return `
         <tr>
@@ -292,7 +314,7 @@ function renderContractRows(items) {
           <td data-label="Total">${formatCurrency(contract.total_amount)}</td>
           <td data-label="Pagado">${formatCurrency(contract.paid_amount)}</td>
           <td data-label="Notas">${escapeHtml(contract.notes || '—')}</td>
-          <td data-label="Acciones">${action}</td>
+          <td data-label="Acciones"><div class="table-actions">${actions || '—'}</div></td>
         </tr>
       `;
     })
@@ -506,6 +528,38 @@ function showReturnFormError(message) {
   formError.hidden = !message;
 }
 
+function setPaymentFieldError(fieldName, message) {
+  const field = document.querySelector(`[data-payment-error="${fieldName}"]`);
+
+  if (field) {
+    field.textContent = message;
+  }
+}
+
+function clearPaymentFormErrors() {
+  document.querySelectorAll('[data-payment-error]').forEach((field) => {
+    field.textContent = '';
+  });
+
+  const formError = document.querySelector('#payment-form-error');
+
+  if (formError) {
+    formError.textContent = '';
+    formError.hidden = true;
+  }
+}
+
+function showPaymentFormError(message) {
+  const formError = document.querySelector('#payment-form-error');
+
+  if (!formError) {
+    return;
+  }
+
+  formError.textContent = message;
+  formError.hidden = !message;
+}
+
 function renderReturnContractSummary(contract) {
   const client = getContractClient(contract);
   const vehicle = getContractVehicle(contract);
@@ -544,6 +598,44 @@ function renderReturnContractSummary(contract) {
       <div>
         <dt>Tarifa diaria</dt>
         <dd>${formatCurrency(contract.daily_rate)}</dd>
+      </div>
+    </dl>
+  `;
+}
+
+function renderPaymentContractSummary(contract) {
+  const client = getContractClient(contract);
+  const vehicle = getContractVehicle(contract);
+  const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ');
+  const total = Number(contract.total_amount) || 0;
+  const paid = Number(contract.paid_amount) || 0;
+  const balance = Math.max(total - paid, 0);
+
+  return `
+    <dl class="detail-list">
+      <div>
+        <dt>Número</dt>
+        <dd>${escapeHtml(contract.sequential_number || '—')}</dd>
+      </div>
+      <div>
+        <dt>Cliente</dt>
+        <dd>${escapeHtml(client.full_name || 'Sin cliente')}</dd>
+      </div>
+      <div>
+        <dt>Vehículo</dt>
+        <dd>${escapeHtml([vehicle.plate, vehicleName].filter(Boolean).join(' · ') || 'Sin vehículo')}</dd>
+      </div>
+      <div>
+        <dt>Total</dt>
+        <dd>${formatCurrency(total)}</dd>
+      </div>
+      <div>
+        <dt>Pagado</dt>
+        <dd>${formatCurrency(paid)}</dd>
+      </div>
+      <div>
+        <dt>Saldo pendiente</dt>
+        <dd>${formatCurrency(balance)}</dd>
       </div>
     </dl>
   `;
@@ -626,6 +718,43 @@ function validateReturnPayload(payload) {
   }
 
   updateReturnSummary();
+
+  return isValid;
+}
+
+function getPaymentFormPayload(form) {
+  const formData = new FormData(form);
+  const amount = formData.get('amount')?.toString().trim();
+  const reference = formData.get('reference')?.toString().trim();
+  const notes = formData.get('payment_notes')?.toString().trim();
+
+  return {
+    method: formData.get('method')?.toString() ?? '',
+    amount: amount ? Number(amount) : Number.NaN,
+    reference: reference || null,
+    notes: notes || null,
+  };
+}
+
+function validatePaymentPayload(payload) {
+  let isValid = true;
+
+  clearPaymentFormErrors();
+
+  if (!payload.method) {
+    setPaymentFieldError('method', 'El método de pago es obligatorio.');
+    isValid = false;
+  }
+
+  if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+    setPaymentFieldError('amount', 'El monto debe ser mayor a 0.');
+    isValid = false;
+  }
+
+  if (['CARD', 'TRANSFER'].includes(payload.method) && !payload.reference) {
+    setPaymentFieldError('reference', 'La referencia es obligatoria para tarjeta o transferencia.');
+    isValid = false;
+  }
 
   return isValid;
 }
@@ -899,6 +1028,21 @@ function setReturnFormLoading(isLoading) {
   }
 }
 
+function setPaymentFormLoading(isLoading) {
+  const form = document.querySelector('#payment-form');
+  const submitButton = document.querySelector('#save-payment-button');
+
+  if (form) {
+    form.querySelectorAll('input, select, textarea, button').forEach((field) => {
+      field.disabled = isLoading;
+    });
+  }
+
+  if (submitButton) {
+    submitButton.textContent = isLoading ? 'Guardando...' : 'Registrar pago';
+  }
+}
+
 function openContractModal() {
   const modal = document.querySelector('#contract-modal');
 
@@ -967,6 +1111,47 @@ function closeReturnModal() {
   document.body.classList.remove('modal-open');
   document.querySelector('#return-form')?.reset();
   clearReturnFormErrors();
+}
+
+function openPaymentModal(contractId) {
+  const modal = document.querySelector('#payment-modal');
+  const contract = contracts.find((item) => String(item.id) === String(contractId));
+
+  if (!modal || !contract) {
+    return;
+  }
+
+  selectedPaymentContract = contract;
+  clearPaymentFormErrors();
+
+  const summary = document.querySelector('#payment-contract-summary');
+  const form = document.querySelector('#payment-form');
+
+  if (summary) {
+    summary.innerHTML = renderPaymentContractSummary(contract);
+  }
+
+  if (form) {
+    form.reset();
+  }
+
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+  document.querySelector('[name="method"]')?.focus();
+}
+
+function closePaymentModal() {
+  const modal = document.querySelector('#payment-modal');
+
+  if (!modal) {
+    return;
+  }
+
+  modal.hidden = true;
+  selectedPaymentContract = null;
+  document.body.classList.remove('modal-open');
+  document.querySelector('#payment-form')?.reset();
+  clearPaymentFormErrors();
 }
 
 async function handleCreateContract(event) {
@@ -1042,6 +1227,44 @@ async function handleCloseContract(event) {
   closeReturnModal();
   await Promise.all([loadContractOptions(), loadContracts()]);
   showContractsToast?.('Contrato cerrado correctamente');
+}
+
+async function handleRegisterPayment(event) {
+  event.preventDefault();
+
+  if (!selectedPaymentContract) {
+    showPaymentFormError('No se encontró el contrato seleccionado.');
+    return;
+  }
+
+  const form = event.currentTarget;
+  const payload = getPaymentFormPayload(form);
+
+  if (!validatePaymentPayload(payload)) {
+    return;
+  }
+
+  setPaymentFormLoading(true);
+  showPaymentFormError('');
+
+  const { error } = await supabase.rpc('register_contract_payment_from_app', {
+    p_contract_id: selectedPaymentContract.id,
+    p_method: payload.method,
+    p_amount: payload.amount,
+    p_reference: payload.reference,
+    p_notes: payload.notes,
+  });
+
+  setPaymentFormLoading(false);
+
+  if (error) {
+    showPaymentFormError(error.message);
+    return;
+  }
+
+  closePaymentModal();
+  await Promise.all([loadContractOptions(), loadContracts()]);
+  showContractsToast?.('Pago registrado correctamente');
 }
 
 function renderContractModal() {
@@ -1193,6 +1416,61 @@ function renderReturnModal() {
   `;
 }
 
+function renderPaymentModal() {
+  return `
+    <div class="modal-backdrop" id="payment-modal" hidden>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Pagos</p>
+            <h2 id="payment-modal-title">Registrar pago</h2>
+          </div>
+          <button class="icon-button" id="close-payment-modal" type="button" aria-label="Cerrar modal">×</button>
+        </div>
+
+        <form class="payment-form" id="payment-form" novalidate>
+          <div class="form-alert" id="payment-form-error" hidden></div>
+          <div id="payment-contract-summary"></div>
+
+          <div class="form-grid">
+            <label>
+              Método de pago
+              <select name="method">
+                <option value="">Selecciona método</option>
+                ${renderPaymentMethodOptions()}
+              </select>
+              <span class="field-error" data-payment-error="method"></span>
+            </label>
+
+            <label>
+              Monto
+              <input name="amount" type="number" min="0" step="0.01" inputmode="decimal" />
+              <span class="field-error" data-payment-error="amount"></span>
+            </label>
+
+            <label>
+              Referencia
+              <input name="reference" type="text" autocomplete="off" />
+              <span class="field-error" data-payment-error="reference"></span>
+            </label>
+          </div>
+
+          <label class="full-field">
+            Notas
+            <textarea name="payment_notes" rows="4"></textarea>
+            <span class="field-error" data-payment-error="payment_notes"></span>
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary-button" id="cancel-payment-modal" type="button">Cancelar</button>
+            <button class="primary-button" id="save-payment-button" type="submit">Registrar pago</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 export function renderContractsPage() {
   return `
     <section class="module-page">
@@ -1207,6 +1485,7 @@ export function renderContractsPage() {
       <div id="contracts-results"></div>
       ${renderContractModal()}
       ${renderReturnModal()}
+      ${renderPaymentModal()}
     </section>
   `;
 }
@@ -1227,13 +1506,21 @@ export async function setupContractsPage({ showToast }) {
   document.querySelector('#close-return-modal')?.addEventListener('click', closeReturnModal, { signal });
   document.querySelector('#cancel-return-modal')?.addEventListener('click', closeReturnModal, { signal });
   document.querySelector('#return-form')?.addEventListener('submit', handleCloseContract, { signal });
+  document.querySelector('#close-payment-modal')?.addEventListener('click', closePaymentModal, { signal });
+  document.querySelector('#cancel-payment-modal')?.addEventListener('click', closePaymentModal, { signal });
+  document.querySelector('#payment-form')?.addEventListener('submit', handleRegisterPayment, { signal });
   document.querySelector('[name="real_end_at"]')?.addEventListener('input', updateReturnSummary, { signal });
   document.querySelector('[name="end_km"]')?.addEventListener('input', updateReturnSummary, { signal });
   document.querySelector('#contracts-results')?.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-contract-return]');
+    const returnButton = event.target.closest('[data-contract-return]');
+    const paymentButton = event.target.closest('[data-contract-payment]');
 
-    if (button) {
-      openReturnModal(button.dataset.contractReturn);
+    if (returnButton) {
+      openReturnModal(returnButton.dataset.contractReturn);
+    }
+
+    if (paymentButton) {
+      openPaymentModal(paymentButton.dataset.contractPayment);
     }
   }, { signal });
   document.querySelector('#contract-modal')?.addEventListener('click', (event) => {
@@ -1244,6 +1531,11 @@ export async function setupContractsPage({ showToast }) {
   document.querySelector('#return-modal')?.addEventListener('click', (event) => {
     if (event.target.id === 'return-modal') {
       closeReturnModal();
+    }
+  }, { signal });
+  document.querySelector('#payment-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'payment-modal') {
+      closePaymentModal();
     }
   }, { signal });
   document.addEventListener('keydown', (event) => {
@@ -1257,6 +1549,10 @@ export async function setupContractsPage({ showToast }) {
 
     if (!document.querySelector('#return-modal')?.hidden) {
       closeReturnModal();
+    }
+
+    if (!document.querySelector('#payment-modal')?.hidden) {
+      closePaymentModal();
     }
   }, { signal });
 
