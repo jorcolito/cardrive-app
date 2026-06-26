@@ -6,7 +6,19 @@ const paymentMethodLabels = {
   TRANSFER: 'Transferencia',
 };
 
+const cardTypeLabels = {
+  AMERICAN_EXPRESS: 'American Express',
+  DINERS: 'Diners',
+  DISCOVER: 'Discover',
+  MASTERCARD: 'Mastercard',
+  OTHER: 'Otro',
+  VISA: 'Visa',
+};
+
+const paymentEvidenceBucket = 'payment-evidence';
+
 let cashboxPageController;
+let dailyPayments = [];
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -68,6 +80,44 @@ function formatNumber(value) {
 
 function getPaymentMethodLabel(method) {
   return paymentMethodLabels[method] ?? '—';
+}
+
+function getCardTypeLabel(cardType) {
+  return cardTypeLabels[cardType] ?? cardType ?? '';
+}
+
+function getPaymentMethodDisplay(payment) {
+  const methodLabel = getPaymentMethodLabel(payment.method);
+
+  if (payment.method !== 'CARD') {
+    return methodLabel;
+  }
+
+  const cardType = getCardTypeLabel(payment.card_type);
+  return cardType ? `${methodLabel} · ${cardType}` : methodLabel;
+}
+
+function getPaymentReferenceDisplay(payment) {
+  if (payment.method === 'CASH') {
+    return payment.reference || '—';
+  }
+
+  if (payment.method === 'CARD') {
+    return payment.voucher_number || payment.reference || '—';
+  }
+
+  return payment.reference || '—';
+}
+
+function isPaymentEvidenceImage(payment) {
+  return payment.evidence_mime_type?.startsWith('image/') ?? false;
+}
+
+function isPaymentEvidencePdf(payment) {
+  const mimeType = payment.evidence_mime_type ?? '';
+  const fileName = payment.evidence_file_name ?? '';
+
+  return mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
 }
 
 function getSummaryValue(summary, key) {
@@ -139,6 +189,9 @@ function renderPaymentRows(payments) {
       const client = contract.client ?? {};
       const vehicle = contract.vehicle ?? {};
       const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ');
+      const evidenceButton = payment.evidence_path
+        ? `<button class="secondary-button table-action" type="button" data-payment-evidence-id="${escapeHtml(payment.id)}">Ver comprobante</button>`
+        : '—';
 
       return `
         <tr>
@@ -152,9 +205,10 @@ function renderPaymentRows(payments) {
             <strong>${escapeHtml(vehicle.plate || 'Sin placa')}</strong>
             <span class="table-muted">${escapeHtml(vehicleName || 'Sin detalle')}</span>
           </td>
-          <td data-label="Método">${escapeHtml(getPaymentMethodLabel(payment.method))}</td>
+          <td data-label="Método">${escapeHtml(getPaymentMethodDisplay(payment))}</td>
           <td data-label="Monto">${formatCurrency(payment.amount)}</td>
-          <td data-label="Referencia">${escapeHtml(payment.reference || '—')}</td>
+          <td data-label="Referencia">${escapeHtml(getPaymentReferenceDisplay(payment))}</td>
+          <td data-label="Comprobante">${evidenceButton}</td>
           <td data-label="Notas">${escapeHtml(payment.notes || '—')}</td>
         </tr>
       `;
@@ -185,6 +239,7 @@ function renderPaymentsTable(payments) {
             <th>Método</th>
             <th>Monto</th>
             <th>Referencia</th>
+            <th>Comprobante</th>
             <th>Notas</th>
           </tr>
         </thead>
@@ -206,6 +261,84 @@ function renderCashboxData(summary, payments) {
 
   if (paymentsContainer) {
     paymentsContainer.innerHTML = renderPaymentsTable(payments);
+  }
+}
+
+function renderEvidencePreviewContent(payment, publicUrl) {
+  const fileName = payment.evidence_file_name || 'Comprobante';
+
+  if (isPaymentEvidenceImage(payment)) {
+    return `
+      <div class="evidence-preview">
+        <img src="${escapeHtml(publicUrl)}" alt="${escapeHtml(fileName)}" />
+      </div>
+    `;
+  }
+
+  if (isPaymentEvidencePdf(payment)) {
+    return `
+      <div class="empty-state evidence-file-state">
+        <div class="placeholder-icon">PDF</div>
+        <h2>${escapeHtml(fileName)}</h2>
+        <p>El comprobante es un PDF.</p>
+        <a class="primary-button" href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">Abrir PDF</a>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="empty-state evidence-file-state">
+      <div class="placeholder-icon">DOC</div>
+      <h2>${escapeHtml(fileName)}</h2>
+      <p>No hay vista previa disponible para este tipo de archivo.</p>
+      <a class="primary-button" href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">Abrir comprobante</a>
+    </div>
+  `;
+}
+
+function openEvidenceModal(paymentId) {
+  const modal = document.querySelector('#evidence-modal');
+  const content = document.querySelector('#evidence-preview-content');
+  const fileName = document.querySelector('#evidence-file-name');
+  const payment = dailyPayments.find((item) => String(item.id) === String(paymentId));
+
+  if (!modal || !content || !payment?.evidence_path) {
+    return;
+  }
+
+  const { data } = supabase.storage.from(paymentEvidenceBucket).getPublicUrl(payment.evidence_path);
+  const publicUrl = data?.publicUrl;
+
+  if (fileName) {
+    fileName.textContent = payment.evidence_file_name || payment.evidence_path;
+  }
+
+  content.innerHTML = publicUrl
+    ? renderEvidencePreviewContent(payment, publicUrl)
+    : `
+      <div class="error-state">
+        <h2>No se pudo abrir el comprobante</h2>
+        <p>No se encontró una URL pública para el archivo.</p>
+      </div>
+    `;
+
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+}
+
+function closeEvidenceModal() {
+  const modal = document.querySelector('#evidence-modal');
+  const content = document.querySelector('#evidence-preview-content');
+
+  if (!modal) {
+    return;
+  }
+
+  modal.hidden = true;
+  document.body.classList.remove('modal-open');
+
+  if (content) {
+    content.innerHTML = '';
   }
 }
 
@@ -263,6 +396,11 @@ async function loadCashbox(showToast) {
         amount,
         reference,
         notes,
+        card_type,
+        voucher_number,
+        evidence_path,
+        evidence_file_name,
+        evidence_mime_type,
         created_at,
         contract:contracts(
           sequential_number,
@@ -290,7 +428,8 @@ async function loadCashbox(showToast) {
     return;
   }
 
-  renderCashboxData(summaryResponse.data, paymentsResponse.data ?? []);
+  dailyPayments = paymentsResponse.data ?? [];
+  renderCashboxData(summaryResponse.data, dailyPayments);
 }
 
 export function renderCashboxPage() {
@@ -314,6 +453,20 @@ export function renderCashboxPage() {
 
       <div class="dashboard-grid cashbox-summary" id="cashbox-summary"></div>
       <div id="cashbox-payments"></div>
+
+      <div class="modal-backdrop" id="evidence-modal" hidden>
+        <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title">
+          <div class="modal-header">
+            <div>
+              <p class="eyebrow">Comprobante</p>
+              <h2 id="evidence-modal-title">Vista previa</h2>
+              <p class="module-subtitle" id="evidence-file-name"></p>
+            </div>
+            <button class="icon-button" id="close-evidence-modal" type="button" aria-label="Cerrar modal">Ã—</button>
+          </div>
+          <div class="evidence-modal-body" id="evidence-preview-content"></div>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -326,6 +479,16 @@ export function setupCashboxPage({ showToast }) {
 
   document.querySelector('#cashbox-refresh')?.addEventListener('click', () => loadCashbox(showToast), { signal });
   document.querySelector('#cashbox-date')?.addEventListener('change', () => loadCashbox(showToast), { signal });
+  document.querySelector('#cashbox-payments')?.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('[data-payment-evidence-id]');
+
+    if (!button) {
+      return;
+    }
+
+    openEvidenceModal(button.dataset.paymentEvidenceId);
+  }, { signal });
+  document.querySelector('#close-evidence-modal')?.addEventListener('click', closeEvidenceModal, { signal });
 
   loadCashbox(showToast);
 }

@@ -774,6 +774,57 @@
   background: var(--color-light);
 }
 
+.field-disabled {
+  color: var(--color-muted);
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.field-disabled input,
+.field-disabled select,
+.field-disabled textarea,
+.payment-form input:disabled,
+.payment-form select:disabled,
+.payment-form textarea:disabled {
+  border-color: #e6e8ee;
+  color: var(--color-muted);
+  background: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.field-disabled .field-error {
+  cursor: default;
+  opacity: 1;
+}
+
+.payment-field-hidden {
+  display: none;
+}
+
+.payment-field-active {
+  color: var(--color-text);
+  cursor: default;
+  opacity: 1;
+}
+
+.payment-field-active input,
+.payment-field-active select,
+.payment-field-active textarea {
+  border-color: var(--color-border);
+  color: var(--color-text);
+  background: var(--color-white);
+}
+
+.payment-field-active input,
+.payment-field-active textarea {
+  cursor: text;
+}
+
+.payment-field-active select,
+.payment-field-active input[type='file'] {
+  cursor: pointer;
+}
+
 .field-error {
   min-height: 18px;
   color: var(--color-accent);
@@ -847,6 +898,30 @@
 
 .modal-dialog-small {
   width: min(620px, 100%);
+}
+
+.evidence-modal-body {
+  padding: 22px;
+}
+
+.evidence-preview {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-light);
+  place-items: center;
+}
+
+.evidence-preview img {
+  display: block;
+  width: 100%;
+  max-height: min(640px, calc(100vh - 220px));
+  object-fit: contain;
+}
+
+.evidence-file-state {
+  margin: 0;
 }
 
 @media (max-width: 720px) {

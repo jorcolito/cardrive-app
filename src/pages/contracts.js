@@ -30,6 +30,18 @@ const paymentMethodLabels = {
   TRANSFER: 'Transferencia',
 };
 
+const cardTypeLabels = {
+  VISA: 'Visa',
+  MASTERCARD: 'Mastercard',
+  DINERS: 'Diners',
+  AMERICAN_EXPRESS: 'American Express',
+  DISCOVER: 'Discover',
+  OTHER: 'Otro',
+};
+
+const paymentEvidenceBucket = 'payment-evidence';
+const maxPaymentEvidenceSize = 5 * 1024 * 1024;
+
 let contracts = [];
 let clients = [];
 let vehicles = [];
@@ -271,6 +283,49 @@ function renderPaymentMethodOptions() {
   return Object.entries(paymentMethodLabels)
     .map(([value, label]) => `<option value="${value}">${label}</option>`)
     .join('');
+}
+
+function renderCardTypeOptions() {
+  return Object.entries(cardTypeLabels)
+    .map(([value, label]) => `<option value="${value}">${label}</option>`)
+    .join('');
+}
+
+function sanitizeFileName(fileName) {
+  return fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/-+/g, '-');
+}
+
+async function uploadPaymentEvidence(contractId, file) {
+  if (!file) {
+    return {
+      evidence_file_name: null,
+      evidence_mime_type: null,
+      evidence_path: null,
+    };
+  }
+
+  const fileName = sanitizeFileName(file.name);
+  const evidencePath = `payments/${contractId}/${Date.now()}-${fileName}`;
+  const { error } = await supabase.storage
+    .from(paymentEvidenceBucket)
+    .upload(evidencePath, file, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: false,
+    });
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    evidence_file_name: file.name,
+    evidence_mime_type: file.type || null,
+    evidence_path: evidencePath,
+  };
 }
 
 function renderContractRows(items) {
@@ -766,14 +821,22 @@ function validateReturnPayload(payload) {
 function getPaymentFormPayload(form) {
   const formData = new FormData(form);
   const amount = formData.get('amount')?.toString().trim();
-  const reference = formData.get('reference')?.toString().trim();
+  const transferReference = formData.get('transfer_reference')?.toString().trim();
+  const voucherNumber = formData.get('voucher_number')?.toString().trim();
   const notes = formData.get('payment_notes')?.toString().trim();
+  const method = formData.get('method')?.toString() ?? '';
+  const evidenceFile = formData.get('evidence_file');
+  const file = evidenceFile instanceof File && evidenceFile.size > 0 ? evidenceFile : null;
 
   return {
-    method: formData.get('method')?.toString() ?? '',
+    card_type: formData.get('card_type')?.toString() || null,
     amount: amount ? Number(amount) : Number.NaN,
-    reference: reference || null,
+    evidence_file: file,
+    method,
     notes: notes || null,
+    reference: method === 'CARD' ? voucherNumber || null : transferReference || null,
+    transfer_reference: transferReference || null,
+    voucher_number: voucherNumber || null,
   };
 }
 
@@ -792,9 +855,38 @@ function validatePaymentPayload(payload) {
     isValid = false;
   }
 
-  if (['CARD', 'TRANSFER'].includes(payload.method) && !payload.reference) {
-    setPaymentFieldError('reference', 'La referencia es obligatoria para tarjeta o transferencia.');
+  if (payload.method === 'TRANSFER' && !payload.transfer_reference) {
+    setPaymentFieldError('transfer_reference', 'El número de comprobante o transacción es obligatorio.');
     isValid = false;
+  }
+
+  if (payload.method === 'CARD' && !payload.card_type) {
+    setPaymentFieldError('card_type', 'El tipo de tarjeta es obligatorio.');
+    isValid = false;
+  }
+
+  if (payload.method === 'CARD' && !payload.voucher_number) {
+    setPaymentFieldError('voucher_number', 'El número de voucher es obligatorio.');
+    isValid = false;
+  }
+
+  if (['CARD', 'TRANSFER'].includes(payload.method) && !payload.evidence_file) {
+    setPaymentFieldError('evidence_file', 'El comprobante es obligatorio.');
+    isValid = false;
+  }
+
+  if (payload.evidence_file) {
+    const isAcceptedType = payload.evidence_file.type.startsWith('image/') || payload.evidence_file.type === 'application/pdf';
+
+    if (!isAcceptedType) {
+      setPaymentFieldError('evidence_file', 'El comprobante debe ser una imagen o PDF.');
+      isValid = false;
+    }
+
+    if (payload.evidence_file.size > maxPaymentEvidenceSize) {
+      setPaymentFieldError('evidence_file', 'El comprobante no puede superar 5MB.');
+      isValid = false;
+    }
   }
 
   return isValid;
@@ -1206,6 +1298,107 @@ function closeReturnModal() {
   clearReturnFormErrors();
 }
 
+function setPaymentFieldVisualState(field, isActive) {
+  if (!field) {
+    return;
+  }
+
+  field.classList.toggle('payment-field-active', isActive);
+  field.classList.toggle('field-disabled', !isActive);
+}
+
+function setPaymentFieldVisibility(fields, isVisible, isActive) {
+  fields.forEach((field) => {
+    field.hidden = !isVisible;
+    field.classList.toggle('payment-field-hidden', !isVisible);
+    setPaymentFieldVisualState(field, isVisible && isActive);
+  });
+}
+
+function updatePaymentDynamicFields() {
+  const form = document.querySelector('#payment-form');
+  const method = document.querySelector('[name="method"]')?.value ?? '';
+  const previousMethod = form?.dataset.currentMethod ?? '';
+  const transferFields = document.querySelectorAll('[data-payment-transfer]');
+  const cardFields = document.querySelectorAll('[data-payment-card]');
+  const evidenceFields = document.querySelectorAll('[data-payment-evidence]');
+  const methodInput = document.querySelector('[name="method"]');
+  const amountInput = document.querySelector('[name="amount"]');
+  const notesInput = document.querySelector('[name="payment_notes"]');
+  const transferReferenceInput = document.querySelector('[name="transfer_reference"]');
+  const cardTypeInput = document.querySelector('[name="card_type"]');
+  const voucherNumberInput = document.querySelector('[name="voucher_number"]');
+  const evidenceInput = document.querySelector('[name="evidence_file"]');
+  const evidenceLabel = document.querySelector('#payment-evidence-label');
+  const hasMethod = Boolean(method);
+  const isTransfer = method === 'TRANSFER';
+  const isCard = method === 'CARD';
+  const needsEvidence = isTransfer || isCard;
+  const methodField = document.querySelector('[data-payment-method]') ?? methodInput?.closest('label');
+  const amountField = document.querySelector('[data-payment-amount]') ?? amountInput?.closest('label');
+  const notesField = document.querySelector('[data-payment-notes]') ?? notesInput?.closest('label');
+
+  setPaymentFieldVisualState(methodField, true);
+  setPaymentFieldVisualState(amountField, hasMethod);
+  setPaymentFieldVisualState(notesField, hasMethod);
+  setPaymentFieldVisibility(transferFields, isTransfer, isTransfer);
+  setPaymentFieldVisibility(cardFields, isCard, isCard);
+  setPaymentFieldVisibility(evidenceFields, needsEvidence, needsEvidence);
+
+  if (amountInput) {
+    amountInput.disabled = !hasMethod;
+    if (!hasMethod) {
+      amountInput.value = '';
+    }
+  }
+
+  if (notesInput) {
+    notesInput.disabled = !hasMethod;
+    if (!hasMethod) {
+      notesInput.value = '';
+    }
+  }
+
+  if (transferReferenceInput) {
+    transferReferenceInput.disabled = !isTransfer;
+    if (!isTransfer) {
+      transferReferenceInput.value = '';
+    }
+  }
+
+  if (cardTypeInput) {
+    cardTypeInput.disabled = !isCard;
+    if (!isCard) {
+      cardTypeInput.value = '';
+    }
+  }
+
+  if (voucherNumberInput) {
+    voucherNumberInput.disabled = !isCard;
+    if (!isCard) {
+      voucherNumberInput.value = '';
+    }
+  }
+
+  if (evidenceInput) {
+    evidenceInput.disabled = !needsEvidence;
+  }
+
+  if ((!needsEvidence || previousMethod !== method) && evidenceInput) {
+    evidenceInput.value = '';
+  }
+
+  if (evidenceLabel) {
+    evidenceLabel.textContent = isCard ? 'Foto o screenshot del voucher' : 'Screenshot de transferencia';
+  }
+
+  if (form) {
+    form.dataset.currentMethod = method;
+  }
+
+  clearPaymentFormErrors();
+}
+
 function openPaymentModal(contractId) {
   const modal = document.querySelector('#payment-modal');
   const contract = contracts.find((item) => String(item.id) === String(contractId));
@@ -1226,7 +1419,10 @@ function openPaymentModal(contractId) {
 
   if (form) {
     form.reset();
+    form.dataset.currentMethod = '';
   }
+
+  updatePaymentDynamicFields();
 
   modal.hidden = false;
   document.body.classList.add('modal-open');
@@ -1244,7 +1440,9 @@ function closePaymentModal() {
   selectedPaymentContract = null;
   document.body.classList.remove('modal-open');
   document.querySelector('#payment-form')?.reset();
+  document.querySelector('#payment-form')?.removeAttribute('data-current-method');
   clearPaymentFormErrors();
+  updatePaymentDynamicFields();
 }
 
 function openDiscountModal(contractId) {
@@ -1381,12 +1579,27 @@ async function handleRegisterPayment(event) {
   setPaymentFormLoading(true);
   showPaymentFormError('');
 
+  let evidence;
+
+  try {
+    evidence = await uploadPaymentEvidence(selectedPaymentContract.id, payload.evidence_file);
+  } catch (error) {
+    setPaymentFormLoading(false);
+    showPaymentFormError(error.message);
+    return;
+  }
+
   const { error } = await supabase.rpc('register_contract_payment_from_app', {
     p_contract_id: selectedPaymentContract.id,
     p_method: payload.method,
     p_amount: payload.amount,
     p_reference: payload.reference,
     p_notes: payload.notes,
+    p_card_type: payload.method === 'CARD' ? payload.card_type : null,
+    p_voucher_number: payload.method === 'CARD' ? payload.voucher_number : null,
+    p_evidence_path: evidence.evidence_path,
+    p_evidence_file_name: evidence.evidence_file_name,
+    p_evidence_mime_type: evidence.evidence_mime_type,
   });
 
   setPaymentFormLoading(false);
@@ -1614,20 +1827,41 @@ function renderPaymentModal() {
 
             <label>
               Monto
-              <input name="amount" type="number" min="0" step="0.01" inputmode="decimal" />
+              <input name="amount" type="number" min="0" step="0.01" inputmode="decimal" disabled />
               <span class="field-error" data-payment-error="amount"></span>
             </label>
 
-            <label>
-              Referencia
-              <input name="reference" type="text" autocomplete="off" />
-              <span class="field-error" data-payment-error="reference"></span>
+            <label class="payment-field-hidden field-disabled" data-payment-transfer hidden>
+              N° comprobante / transacción
+              <input name="transfer_reference" type="text" autocomplete="off" />
+              <span class="field-error" data-payment-error="transfer_reference"></span>
+            </label>
+
+            <label class="payment-field-hidden field-disabled" data-payment-card hidden>
+              Tipo de tarjeta
+              <select name="card_type">
+                <option value="">Selecciona tipo</option>
+                ${renderCardTypeOptions()}
+              </select>
+              <span class="field-error" data-payment-error="card_type"></span>
+            </label>
+
+            <label class="payment-field-hidden field-disabled" data-payment-card hidden>
+              Número de voucher
+              <input name="voucher_number" type="text" autocomplete="off" />
+              <span class="field-error" data-payment-error="voucher_number"></span>
+            </label>
+
+            <label class="payment-field-hidden field-disabled" data-payment-evidence hidden>
+              <span id="payment-evidence-label">Comprobante</span>
+              <input name="evidence_file" type="file" accept="image/*,application/pdf,.pdf" />
+              <span class="field-error" data-payment-error="evidence_file"></span>
             </label>
           </div>
 
-          <label class="full-field">
+          <label class="full-field field-disabled" data-payment-notes>
             Notas
-            <textarea name="payment_notes" rows="4"></textarea>
+            <textarea name="payment_notes" rows="4" disabled></textarea>
             <span class="field-error" data-payment-error="payment_notes"></span>
           </label>
 
@@ -1720,6 +1954,7 @@ export async function setupContractsPage({ showToast }) {
   document.querySelector('#close-payment-modal')?.addEventListener('click', closePaymentModal, { signal });
   document.querySelector('#cancel-payment-modal')?.addEventListener('click', closePaymentModal, { signal });
   document.querySelector('#payment-form')?.addEventListener('submit', handleRegisterPayment, { signal });
+  document.querySelector('[name="method"]')?.addEventListener('change', updatePaymentDynamicFields, { signal });
   document.querySelector('#close-discount-modal')?.addEventListener('click', closeDiscountModal, { signal });
   document.querySelector('#cancel-discount-modal')?.addEventListener('click', closeDiscountModal, { signal });
   document.querySelector('#discount-form')?.addEventListener('submit', handleRequestDiscount, { signal });
