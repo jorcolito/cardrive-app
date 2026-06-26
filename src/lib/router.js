@@ -3,7 +3,7 @@ import { renderSidebar, setupSidebar } from '../components/sidebar.js';
 import { renderTopbar } from '../components/topbar.js';
 import { renderToastHost, showToast } from '../components/toast.js';
 import { renderApprovalsPage } from '../pages/approvals.js';
-import { renderCashboxPage } from '../pages/cashbox.js';
+import { renderCashboxPage, setupCashboxPage } from '../pages/cashbox.js';
 import { renderClientsPage, setupClientsPage } from '../pages/clients.js';
 import { renderContractsPage, setupContractsPage } from '../pages/contracts.js';
 import { renderDashboardPage } from '../pages/dashboard.js';
@@ -50,6 +50,7 @@ const routes = {
     title: 'Caja diaria',
     subtitle: 'Vista base para ingresos y movimientos del día',
     view: renderCashboxPage,
+    setup: setupCashboxPage,
   },
 };
 

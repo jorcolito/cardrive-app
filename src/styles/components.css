@@ -333,6 +333,16 @@
   grid-template-columns: 1fr;
 }
 
+.cashbox-toolbar {
+  grid-template-columns: minmax(220px, 320px) auto;
+  align-items: end;
+  justify-content: start;
+}
+
+.cashbox-summary {
+  margin-top: 0;
+}
+
 .filter-bar label {
   display: grid;
   gap: 8px;
