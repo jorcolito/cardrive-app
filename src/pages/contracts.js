@@ -38,6 +38,7 @@ let showContractsToast;
 let contractsPageController;
 let selectedReturnContract;
 let selectedPaymentContract;
+let selectedDiscountContract;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -280,12 +281,16 @@ function renderContractRows(items) {
       const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ');
       const statusClass = getStatusClass(contract.status);
       const financialClass = getStatusClass(contract.financial_status);
+      const balance = Number(contract.total_amount || 0) - Number(contract.paid_amount || 0);
       const actions = [
         contract.status === 'ACTIVE'
           ? `<button class="secondary-button table-action" type="button" data-contract-return="${escapeHtml(contract.id)}">Registrar devolución</button>`
           : '',
         contract.status !== 'CANCELLED'
           ? `<button class="secondary-button table-action" type="button" data-contract-payment="${escapeHtml(contract.id)}">Registrar pago</button>`
+          : '',
+        contract.status !== 'CANCELLED' && balance > 0 && contract.financial_status !== 'DISCOUNT_REQUESTED'
+          ? `<button class="secondary-button table-action" type="button" data-contract-discount="${escapeHtml(contract.id)}">Solicitar descuento</button>`
           : '',
       ].filter(Boolean).join('');
 
@@ -560,6 +565,38 @@ function showPaymentFormError(message) {
   formError.hidden = !message;
 }
 
+function setDiscountFieldError(fieldName, message) {
+  const field = document.querySelector(`[data-discount-error="${fieldName}"]`);
+
+  if (field) {
+    field.textContent = message;
+  }
+}
+
+function clearDiscountFormErrors() {
+  document.querySelectorAll('[data-discount-error]').forEach((field) => {
+    field.textContent = '';
+  });
+
+  const formError = document.querySelector('#discount-form-error');
+
+  if (formError) {
+    formError.textContent = '';
+    formError.hidden = true;
+  }
+}
+
+function showDiscountFormError(message) {
+  const formError = document.querySelector('#discount-form-error');
+
+  if (!formError) {
+    return;
+  }
+
+  formError.textContent = message;
+  formError.hidden = !message;
+}
+
 function renderReturnContractSummary(contract) {
   const client = getContractClient(contract);
   const vehicle = getContractVehicle(contract);
@@ -639,6 +676,10 @@ function renderPaymentContractSummary(contract) {
       </div>
     </dl>
   `;
+}
+
+function renderDiscountContractSummary(contract) {
+  return renderPaymentContractSummary(contract);
 }
 
 function updateReturnSummary() {
@@ -753,6 +794,43 @@ function validatePaymentPayload(payload) {
 
   if (['CARD', 'TRANSFER'].includes(payload.method) && !payload.reference) {
     setPaymentFieldError('reference', 'La referencia es obligatoria para tarjeta o transferencia.');
+    isValid = false;
+  }
+
+  return isValid;
+}
+
+function getDiscountFormPayload(form) {
+  const formData = new FormData(form);
+  const amount = formData.get('discount_amount')?.toString().trim();
+  const reason = formData.get('discount_reason')?.toString().trim();
+
+  return {
+    amount: amount ? Number(amount) : Number.NaN,
+    reason: reason || '',
+  };
+}
+
+function validateDiscountPayload(payload) {
+  let isValid = true;
+  const total = Number(selectedDiscountContract?.total_amount) || 0;
+  const paid = Number(selectedDiscountContract?.paid_amount) || 0;
+  const balance = Math.max(total - paid, 0);
+
+  clearDiscountFormErrors();
+
+  if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+    setDiscountFieldError('discount_amount', 'El monto del descuento debe ser mayor a 0.');
+    isValid = false;
+  }
+
+  if (Number.isFinite(payload.amount) && payload.amount > balance) {
+    setDiscountFieldError('discount_amount', 'El descuento no puede ser mayor al saldo pendiente.');
+    isValid = false;
+  }
+
+  if (!payload.reason) {
+    setDiscountFieldError('discount_reason', 'El motivo es obligatorio.');
     isValid = false;
   }
 
@@ -1043,6 +1121,21 @@ function setPaymentFormLoading(isLoading) {
   }
 }
 
+function setDiscountFormLoading(isLoading) {
+  const form = document.querySelector('#discount-form');
+  const submitButton = document.querySelector('#save-discount-button');
+
+  if (form) {
+    form.querySelectorAll('input, textarea, button').forEach((field) => {
+      field.disabled = isLoading;
+    });
+  }
+
+  if (submitButton) {
+    submitButton.textContent = isLoading ? 'Enviando...' : 'Enviar solicitud';
+  }
+}
+
 function openContractModal() {
   const modal = document.querySelector('#contract-modal');
 
@@ -1152,6 +1245,47 @@ function closePaymentModal() {
   document.body.classList.remove('modal-open');
   document.querySelector('#payment-form')?.reset();
   clearPaymentFormErrors();
+}
+
+function openDiscountModal(contractId) {
+  const modal = document.querySelector('#discount-modal');
+  const contract = contracts.find((item) => String(item.id) === String(contractId));
+
+  if (!modal || !contract) {
+    return;
+  }
+
+  selectedDiscountContract = contract;
+  clearDiscountFormErrors();
+
+  const summary = document.querySelector('#discount-contract-summary');
+  const form = document.querySelector('#discount-form');
+
+  if (summary) {
+    summary.innerHTML = renderDiscountContractSummary(contract);
+  }
+
+  if (form) {
+    form.reset();
+  }
+
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+  document.querySelector('[name="discount_amount"]')?.focus();
+}
+
+function closeDiscountModal() {
+  const modal = document.querySelector('#discount-modal');
+
+  if (!modal) {
+    return;
+  }
+
+  modal.hidden = true;
+  selectedDiscountContract = null;
+  document.body.classList.remove('modal-open');
+  document.querySelector('#discount-form')?.reset();
+  clearDiscountFormErrors();
 }
 
 async function handleCreateContract(event) {
@@ -1265,6 +1399,42 @@ async function handleRegisterPayment(event) {
   closePaymentModal();
   await Promise.all([loadContractOptions(), loadContracts()]);
   showContractsToast?.('Pago registrado correctamente');
+}
+
+async function handleRequestDiscount(event) {
+  event.preventDefault();
+
+  if (!selectedDiscountContract) {
+    showDiscountFormError('No se encontró el contrato seleccionado.');
+    return;
+  }
+
+  const form = event.currentTarget;
+  const payload = getDiscountFormPayload(form);
+
+  if (!validateDiscountPayload(payload)) {
+    return;
+  }
+
+  setDiscountFormLoading(true);
+  showDiscountFormError('');
+
+  const { error } = await supabase.rpc('request_contract_discount_from_app', {
+    p_contract_id: selectedDiscountContract.id,
+    p_discount_amount: payload.amount,
+    p_reason: payload.reason,
+  });
+
+  setDiscountFormLoading(false);
+
+  if (error) {
+    showDiscountFormError(error.message);
+    return;
+  }
+
+  closeDiscountModal();
+  await Promise.all([loadContractOptions(), loadContracts()]);
+  showContractsToast?.('Solicitud de descuento enviada');
 }
 
 function renderContractModal() {
@@ -1471,6 +1641,46 @@ function renderPaymentModal() {
   `;
 }
 
+function renderDiscountModal() {
+  return `
+    <div class="modal-backdrop" id="discount-modal" hidden>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="discount-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Descuentos</p>
+            <h2 id="discount-modal-title">Solicitar descuento</h2>
+          </div>
+          <button class="icon-button" id="close-discount-modal" type="button" aria-label="Cerrar modal">×</button>
+        </div>
+
+        <form class="discount-form" id="discount-form" novalidate>
+          <div class="form-alert" id="discount-form-error" hidden></div>
+          <div id="discount-contract-summary"></div>
+
+          <div class="form-grid">
+            <label>
+              Monto del descuento
+              <input name="discount_amount" type="number" min="0" step="0.01" inputmode="decimal" />
+              <span class="field-error" data-discount-error="discount_amount"></span>
+            </label>
+          </div>
+
+          <label class="full-field">
+            Motivo
+            <textarea name="discount_reason" rows="4"></textarea>
+            <span class="field-error" data-discount-error="discount_reason"></span>
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary-button" id="cancel-discount-modal" type="button">Cancelar</button>
+            <button class="primary-button" id="save-discount-button" type="submit">Enviar solicitud</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 export function renderContractsPage() {
   return `
     <section class="module-page">
@@ -1486,6 +1696,7 @@ export function renderContractsPage() {
       ${renderContractModal()}
       ${renderReturnModal()}
       ${renderPaymentModal()}
+      ${renderDiscountModal()}
     </section>
   `;
 }
@@ -1509,11 +1720,15 @@ export async function setupContractsPage({ showToast }) {
   document.querySelector('#close-payment-modal')?.addEventListener('click', closePaymentModal, { signal });
   document.querySelector('#cancel-payment-modal')?.addEventListener('click', closePaymentModal, { signal });
   document.querySelector('#payment-form')?.addEventListener('submit', handleRegisterPayment, { signal });
+  document.querySelector('#close-discount-modal')?.addEventListener('click', closeDiscountModal, { signal });
+  document.querySelector('#cancel-discount-modal')?.addEventListener('click', closeDiscountModal, { signal });
+  document.querySelector('#discount-form')?.addEventListener('submit', handleRequestDiscount, { signal });
   document.querySelector('[name="real_end_at"]')?.addEventListener('input', updateReturnSummary, { signal });
   document.querySelector('[name="end_km"]')?.addEventListener('input', updateReturnSummary, { signal });
   document.querySelector('#contracts-results')?.addEventListener('click', (event) => {
     const returnButton = event.target.closest('[data-contract-return]');
     const paymentButton = event.target.closest('[data-contract-payment]');
+    const discountButton = event.target.closest('[data-contract-discount]');
 
     if (returnButton) {
       openReturnModal(returnButton.dataset.contractReturn);
@@ -1521,6 +1736,10 @@ export async function setupContractsPage({ showToast }) {
 
     if (paymentButton) {
       openPaymentModal(paymentButton.dataset.contractPayment);
+    }
+
+    if (discountButton) {
+      openDiscountModal(discountButton.dataset.contractDiscount);
     }
   }, { signal });
   document.querySelector('#contract-modal')?.addEventListener('click', (event) => {
@@ -1538,6 +1757,11 @@ export async function setupContractsPage({ showToast }) {
       closePaymentModal();
     }
   }, { signal });
+  document.querySelector('#discount-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'discount-modal') {
+      closeDiscountModal();
+    }
+  }, { signal });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') {
       return;
@@ -1553,6 +1777,10 @@ export async function setupContractsPage({ showToast }) {
 
     if (!document.querySelector('#payment-modal')?.hidden) {
       closePaymentModal();
+    }
+
+    if (!document.querySelector('#discount-modal')?.hidden) {
+      closeDiscountModal();
     }
   }, { signal });
 

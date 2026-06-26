@@ -2,7 +2,7 @@ import { isAuthenticated } from './auth.js';
 import { renderSidebar, setupSidebar } from '../components/sidebar.js';
 import { renderTopbar } from '../components/topbar.js';
 import { renderToastHost, showToast } from '../components/toast.js';
-import { renderApprovalsPage } from '../pages/approvals.js';
+import { renderApprovalsPage, setupApprovalsPage } from '../pages/approvals.js';
 import { renderCashboxPage, setupCashboxPage } from '../pages/cashbox.js';
 import { renderClientsPage, setupClientsPage } from '../pages/clients.js';
 import { renderContractsPage, setupContractsPage } from '../pages/contracts.js';
@@ -45,6 +45,7 @@ const routes = {
     title: 'Aprobaciones',
     subtitle: 'Revisión interna de procesos pendientes',
     view: renderApprovalsPage,
+    setup: setupApprovalsPage,
   },
   '/cashbox': {
     title: 'Caja diaria',

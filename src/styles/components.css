@@ -481,7 +481,8 @@
 }
 
 .status-active,
-.status-paid {
+.status-paid,
+.status-approved {
   color: #12633c;
   background: #dff7ea;
 }
@@ -503,6 +504,11 @@
 }
 
 .status-overdue {
+  color: #8d1d30;
+  background: #ffe1e7;
+}
+
+.status-rejected {
   color: #8d1d30;
   background: #ffe1e7;
 }
@@ -668,7 +674,9 @@
 .reservation-form,
 .contract-form,
 .return-form,
-.payment-form {
+.payment-form,
+.discount-form,
+.approval-form {
   display: grid;
   gap: 18px;
   padding: 22px;
@@ -686,6 +694,8 @@
 .contract-form label,
 .return-form label,
 .payment-form label,
+.discount-form label,
+.approval-form label,
 .full-field {
   display: grid;
   gap: 8px;
@@ -709,7 +719,10 @@
 .return-form textarea,
 .payment-form input,
 .payment-form select,
-.payment-form textarea {
+.payment-form textarea,
+.discount-form input,
+.discount-form textarea,
+.approval-form textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -725,7 +738,9 @@
 .reservation-form textarea,
 .contract-form textarea,
 .return-form textarea,
-.payment-form textarea {
+.payment-form textarea,
+.discount-form textarea,
+.approval-form textarea {
   min-height: 108px;
   resize: vertical;
 }
@@ -746,7 +761,10 @@
 .return-form textarea:focus,
 .payment-form input:focus,
 .payment-form select:focus,
-.payment-form textarea:focus {
+.payment-form textarea:focus,
+.discount-form input:focus,
+.discount-form textarea:focus,
+.approval-form textarea:focus {
   border-color: var(--color-accent);
   outline: 3px solid rgba(233, 69, 96, 0.16);
 }
@@ -825,6 +843,10 @@
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.modal-dialog-small {
+  width: min(620px, 100%);
 }
 
 @media (max-width: 720px) {
@@ -929,7 +951,9 @@
   .reservation-form,
   .contract-form,
   .return-form,
-  .payment-form {
+  .payment-form,
+  .discount-form,
+  .approval-form {
     padding-right: 18px;
     padding-left: 18px;
   }
