@@ -51,6 +51,8 @@ let contractsPageController;
 let selectedReturnContract;
 let selectedPaymentContract;
 let selectedDiscountContract;
+let selectedPaymentHistoryContract;
+let contractPaymentHistory = [];
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -208,6 +210,44 @@ function getPaymentMethodLabel(method) {
   return paymentMethodLabels[method] ?? '—';
 }
 
+function getCardTypeLabel(cardType) {
+  return cardTypeLabels[cardType] ?? cardType ?? '';
+}
+
+function getPaymentMethodDisplay(payment) {
+  const methodLabel = getPaymentMethodLabel(payment.method);
+
+  if (payment.method !== 'CARD') {
+    return methodLabel;
+  }
+
+  const cardType = getCardTypeLabel(payment.card_type);
+  return cardType ? `${methodLabel} · ${cardType}` : methodLabel;
+}
+
+function getPaymentReferenceDisplay(payment) {
+  if (payment.method === 'CASH') {
+    return payment.reference || '—';
+  }
+
+  if (payment.method === 'CARD') {
+    return payment.voucher_number || payment.reference || '—';
+  }
+
+  return payment.reference || '—';
+}
+
+function isPaymentEvidenceImage(payment) {
+  return payment.evidence_mime_type?.startsWith('image/') ?? false;
+}
+
+function isPaymentEvidencePdf(payment) {
+  const mimeType = payment.evidence_mime_type ?? '';
+  const fileName = payment.evidence_file_name ?? '';
+
+  return mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf');
+}
+
 function getContractClient(contract) {
   return contract?.client ?? {};
 }
@@ -347,6 +387,7 @@ function renderContractRows(items) {
         contract.status !== 'CANCELLED' && balance > 0 && contract.financial_status !== 'DISCOUNT_REQUESTED'
           ? `<button class="secondary-button table-action" type="button" data-contract-discount="${escapeHtml(contract.id)}">Solicitar descuento</button>`
           : '',
+        `<button class="secondary-button table-action" type="button" data-contract-payments="${escapeHtml(contract.id)}">Ver pagos</button>`,
       ].filter(Boolean).join('');
 
       return `
@@ -737,6 +778,91 @@ function renderDiscountContractSummary(contract) {
   return renderPaymentContractSummary(contract);
 }
 
+function renderPaymentHistoryRows(payments) {
+  return payments
+    .map((payment) => {
+      const evidenceButton = payment.evidence_path
+        ? `<button class="secondary-button table-action" type="button" data-payment-history-evidence="${escapeHtml(payment.id)}">Ver comprobante</button>`
+        : '—';
+
+      return `
+        <tr>
+          <td data-label="Fecha/hora">${formatDateTime(payment.created_at)}</td>
+          <td data-label="Método">${escapeHtml(getPaymentMethodDisplay(payment))}</td>
+          <td data-label="Monto">${formatCurrency(payment.amount)}</td>
+          <td data-label="Referencia / voucher">${escapeHtml(getPaymentReferenceDisplay(payment))}</td>
+          <td data-label="Notas">${escapeHtml(payment.notes || '—')}</td>
+          <td data-label="Comprobante">${evidenceButton}</td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
+function renderPaymentHistoryTable(payments) {
+  if (!payments.length) {
+    return `
+      <div class="empty-state">
+        <div class="placeholder-icon">$</div>
+        <h2>Sin pagos</h2>
+        <p>Este contrato aún no tiene pagos registrados.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fecha/hora</th>
+            <th>Método</th>
+            <th>Monto</th>
+            <th>Referencia / voucher</th>
+            <th>Notas</th>
+            <th>Comprobante</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderPaymentHistoryRows(payments)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPaymentEvidencePreviewContent(payment, publicUrl) {
+  const fileName = payment.evidence_file_name || 'Comprobante';
+
+  if (isPaymentEvidenceImage(payment)) {
+    return `
+      <div class="evidence-preview">
+        <img src="${escapeHtml(publicUrl)}" alt="${escapeHtml(fileName)}" />
+      </div>
+    `;
+  }
+
+  if (isPaymentEvidencePdf(payment)) {
+    return `
+      <div class="empty-state evidence-file-state">
+        <div class="placeholder-icon">PDF</div>
+        <h2>${escapeHtml(fileName)}</h2>
+        <p>El comprobante es un PDF.</p>
+        <a class="primary-button" href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">Abrir PDF</a>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="empty-state evidence-file-state">
+      <div class="placeholder-icon">DOC</div>
+      <h2>${escapeHtml(fileName)}</h2>
+      <p>No hay vista previa disponible para este tipo de archivo.</p>
+      <a class="primary-button" href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">Abrir comprobante</a>
+    </div>
+  `;
+}
+
 function updateReturnSummary() {
   const summary = document.querySelector('#return-summary');
 
@@ -870,7 +996,7 @@ function validatePaymentPayload(payload) {
     isValid = false;
   }
 
-  if (['CARD', 'TRANSFER'].includes(payload.method) && !payload.evidence_file) {
+  if (payload.method === 'TRANSFER' && !payload.evidence_file) {
     setPaymentFieldError('evidence_file', 'El comprobante es obligatorio.');
     isValid = false;
   }
@@ -1333,7 +1459,7 @@ function updatePaymentDynamicFields() {
   const hasMethod = Boolean(method);
   const isTransfer = method === 'TRANSFER';
   const isCard = method === 'CARD';
-  const needsEvidence = isTransfer || isCard;
+  const needsEvidence = isTransfer;
   const methodField = document.querySelector('[data-payment-method]') ?? methodInput?.closest('label');
   const amountField = document.querySelector('[data-payment-amount]') ?? amountInput?.closest('label');
   const notesField = document.querySelector('[data-payment-notes]') ?? notesInput?.closest('label');
@@ -1389,7 +1515,7 @@ function updatePaymentDynamicFields() {
   }
 
   if (evidenceLabel) {
-    evidenceLabel.textContent = isCard ? 'Foto o screenshot del voucher' : 'Screenshot de transferencia';
+    evidenceLabel.textContent = 'Screenshot de transferencia';
   }
 
   if (form) {
@@ -1484,6 +1610,161 @@ function closeDiscountModal() {
   document.body.classList.remove('modal-open');
   document.querySelector('#discount-form')?.reset();
   clearDiscountFormErrors();
+}
+
+function renderPaymentHistoryLoading() {
+  const content = document.querySelector('#payment-history-content');
+
+  if (!content) {
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="loading-state">
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <p>Cargando pagos del contrato...</p>
+    </div>
+  `;
+}
+
+function renderPaymentHistoryError(message) {
+  const content = document.querySelector('#payment-history-content');
+
+  if (!content) {
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="error-state">
+      <h2>No se pudieron cargar los pagos</h2>
+      <p>${escapeHtml(message)}</p>
+    </div>
+  `;
+}
+
+async function openPaymentHistoryModal(contractId) {
+  const modal = document.querySelector('#payment-history-modal');
+  const summary = document.querySelector('#payment-history-summary');
+  const contract = contracts.find((item) => String(item.id) === String(contractId));
+
+  if (!modal || !contract) {
+    return;
+  }
+
+  selectedPaymentHistoryContract = contract;
+  contractPaymentHistory = [];
+
+  if (summary) {
+    summary.innerHTML = renderPaymentContractSummary(contract);
+  }
+
+  renderPaymentHistoryLoading();
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+
+  const { data, error } = await supabase
+    .from('payments')
+    .select(`
+      id,
+      contract_id,
+      method,
+      amount,
+      reference,
+      notes,
+      card_type,
+      voucher_number,
+      evidence_path,
+      evidence_file_name,
+      evidence_mime_type,
+      created_at
+    `)
+    .eq('contract_id', contract.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    renderPaymentHistoryError(error.message);
+    return;
+  }
+
+  contractPaymentHistory = data ?? [];
+
+  const content = document.querySelector('#payment-history-content');
+  if (content) {
+    content.innerHTML = renderPaymentHistoryTable(contractPaymentHistory);
+  }
+}
+
+function closePaymentHistoryModal() {
+  const modal = document.querySelector('#payment-history-modal');
+  const summary = document.querySelector('#payment-history-summary');
+  const content = document.querySelector('#payment-history-content');
+
+  if (!modal) {
+    return;
+  }
+
+  closePaymentEvidenceModal();
+  modal.hidden = true;
+  selectedPaymentHistoryContract = null;
+  contractPaymentHistory = [];
+  document.body.classList.remove('modal-open');
+
+  if (summary) {
+    summary.innerHTML = '';
+  }
+
+  if (content) {
+    content.innerHTML = '';
+  }
+}
+
+function openPaymentEvidenceModal(paymentId) {
+  const modal = document.querySelector('#payment-evidence-modal');
+  const content = document.querySelector('#payment-evidence-preview-content');
+  const fileName = document.querySelector('#payment-evidence-file-name');
+  const payment = contractPaymentHistory.find((item) => String(item.id) === String(paymentId));
+
+  if (!modal || !content || !payment?.evidence_path) {
+    return;
+  }
+
+  const { data } = supabase.storage.from(paymentEvidenceBucket).getPublicUrl(payment.evidence_path);
+  const publicUrl = data?.publicUrl;
+
+  if (fileName) {
+    fileName.textContent = payment.evidence_file_name || payment.evidence_path;
+  }
+
+  content.innerHTML = publicUrl
+    ? renderPaymentEvidencePreviewContent(payment, publicUrl)
+    : `
+      <div class="error-state">
+        <h2>No se pudo abrir el comprobante</h2>
+        <p>No se encontró una URL pública para el archivo.</p>
+      </div>
+    `;
+
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+}
+
+function closePaymentEvidenceModal() {
+  const modal = document.querySelector('#payment-evidence-modal');
+  const content = document.querySelector('#payment-evidence-preview-content');
+
+  if (!modal) {
+    return;
+  }
+
+  modal.hidden = true;
+
+  if (content) {
+    content.innerHTML = '';
+  }
+
+  if (document.querySelector('#payment-history-modal')?.hidden) {
+    document.body.classList.remove('modal-open');
+  }
 }
 
 async function handleCreateContract(event) {
@@ -1915,6 +2196,45 @@ function renderDiscountModal() {
   `;
 }
 
+function renderPaymentHistoryModal() {
+  return `
+    <div class="modal-backdrop" id="payment-history-modal" hidden>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-history-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Pagos</p>
+            <h2 id="payment-history-modal-title">Historial de pagos</h2>
+          </div>
+          <button class="icon-button" id="close-payment-history-modal" type="button" aria-label="Cerrar modal">×</button>
+        </div>
+
+        <div class="payment-form">
+          <div id="payment-history-summary"></div>
+          <div id="payment-history-content"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPaymentEvidenceModal() {
+  return `
+    <div class="modal-backdrop" id="payment-evidence-modal" hidden>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-evidence-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Comprobante</p>
+            <h2 id="payment-evidence-modal-title">Vista previa</h2>
+            <p class="module-subtitle" id="payment-evidence-file-name"></p>
+          </div>
+          <button class="icon-button" id="close-payment-evidence-modal" type="button" aria-label="Cerrar modal">×</button>
+        </div>
+        <div class="evidence-modal-body" id="payment-evidence-preview-content"></div>
+      </div>
+    </div>
+  `;
+}
+
 export function renderContractsPage() {
   return `
     <section class="module-page">
@@ -1931,6 +2251,8 @@ export function renderContractsPage() {
       ${renderReturnModal()}
       ${renderPaymentModal()}
       ${renderDiscountModal()}
+      ${renderPaymentHistoryModal()}
+      ${renderPaymentEvidenceModal()}
     </section>
   `;
 }
@@ -1958,12 +2280,24 @@ export async function setupContractsPage({ showToast }) {
   document.querySelector('#close-discount-modal')?.addEventListener('click', closeDiscountModal, { signal });
   document.querySelector('#cancel-discount-modal')?.addEventListener('click', closeDiscountModal, { signal });
   document.querySelector('#discount-form')?.addEventListener('submit', handleRequestDiscount, { signal });
+  document.querySelector('#close-payment-history-modal')?.addEventListener('click', closePaymentHistoryModal, { signal });
+  document.querySelector('#close-payment-evidence-modal')?.addEventListener('click', closePaymentEvidenceModal, { signal });
+  document.querySelector('#payment-history-content')?.addEventListener('click', (event) => {
+    const evidenceButton = event.target.closest('[data-payment-history-evidence]');
+
+    if (!evidenceButton) {
+      return;
+    }
+
+    openPaymentEvidenceModal(evidenceButton.dataset.paymentHistoryEvidence);
+  }, { signal });
   document.querySelector('[name="real_end_at"]')?.addEventListener('input', updateReturnSummary, { signal });
   document.querySelector('[name="end_km"]')?.addEventListener('input', updateReturnSummary, { signal });
   document.querySelector('#contracts-results')?.addEventListener('click', (event) => {
     const returnButton = event.target.closest('[data-contract-return]');
     const paymentButton = event.target.closest('[data-contract-payment]');
     const discountButton = event.target.closest('[data-contract-discount]');
+    const paymentsButton = event.target.closest('[data-contract-payments]');
 
     if (returnButton) {
       openReturnModal(returnButton.dataset.contractReturn);
@@ -1975,6 +2309,10 @@ export async function setupContractsPage({ showToast }) {
 
     if (discountButton) {
       openDiscountModal(discountButton.dataset.contractDiscount);
+    }
+
+    if (paymentsButton) {
+      openPaymentHistoryModal(paymentsButton.dataset.contractPayments);
     }
   }, { signal });
   document.querySelector('#contract-modal')?.addEventListener('click', (event) => {
@@ -1997,6 +2335,16 @@ export async function setupContractsPage({ showToast }) {
       closeDiscountModal();
     }
   }, { signal });
+  document.querySelector('#payment-history-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'payment-history-modal') {
+      closePaymentHistoryModal();
+    }
+  }, { signal });
+  document.querySelector('#payment-evidence-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'payment-evidence-modal') {
+      closePaymentEvidenceModal();
+    }
+  }, { signal });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') {
       return;
@@ -2016,6 +2364,15 @@ export async function setupContractsPage({ showToast }) {
 
     if (!document.querySelector('#discount-modal')?.hidden) {
       closeDiscountModal();
+    }
+
+    if (!document.querySelector('#payment-evidence-modal')?.hidden) {
+      closePaymentEvidenceModal();
+      return;
+    }
+
+    if (!document.querySelector('#payment-history-modal')?.hidden) {
+      closePaymentHistoryModal();
     }
   }, { signal });
 
