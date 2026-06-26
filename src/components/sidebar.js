@@ -3,6 +3,7 @@ import { endDemoSession } from '../lib/auth.js';
 const navigationItems = [
   { label: 'Dashboard', path: '/dashboard', icon: 'grid' },
   { label: 'Vehículos', path: '/vehicles', icon: 'car' },
+  { label: 'Clientes', path: '/clients', icon: 'client' },
   { label: 'Reservas', path: '/reservations', icon: 'calendar' },
   { label: 'Contratos', path: '/contracts', icon: 'file' },
   { label: 'Aprobaciones', path: '/approvals', icon: 'check' },
@@ -12,6 +13,7 @@ const navigationItems = [
 const icons = {
   grid: '▦',
   car: '▱',
+  client: 'ID',
   calendar: '□',
   file: '▤',
   check: '✓',

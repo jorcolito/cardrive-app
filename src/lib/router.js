@@ -4,6 +4,7 @@ import { renderTopbar } from '../components/topbar.js';
 import { renderToastHost, showToast } from '../components/toast.js';
 import { renderApprovalsPage } from '../pages/approvals.js';
 import { renderCashboxPage } from '../pages/cashbox.js';
+import { renderClientsPage, setupClientsPage } from '../pages/clients.js';
 import { renderContractsPage } from '../pages/contracts.js';
 import { renderDashboardPage } from '../pages/dashboard.js';
 import { renderLoginPage, setupLoginPage } from '../pages/login.js';
@@ -21,6 +22,12 @@ const routes = {
     subtitle: 'Control de flota y disponibilidad',
     view: renderVehiclesPage,
     setup: setupVehiclesPage,
+  },
+  '/clients': {
+    title: 'Clientes',
+    subtitle: 'Registro de clientes y datos de contacto',
+    view: renderClientsPage,
+    setup: setupClientsPage,
   },
   '/reservations': {
     title: 'Reservas',

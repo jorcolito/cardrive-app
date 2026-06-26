@@ -310,6 +310,12 @@
   font-size: 1.6rem;
 }
 
+.module-subtitle {
+  margin-top: 6px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
 .module-action {
   min-width: 156px;
 }
@@ -321,6 +327,10 @@
   padding: 16px;
   border-radius: 8px;
   background: var(--color-light);
+}
+
+.filter-bar.single-filter {
+  grid-template-columns: 1fr;
 }
 
 .filter-bar label {
@@ -430,6 +440,39 @@
 .status-unknown {
   color: #8d1d30;
   background: #ffe1e7;
+}
+
+.license-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  color: var(--color-navy);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+  background: var(--color-light);
+}
+
+.license-valid {
+  color: #12633c;
+  background: #dff7ea;
+}
+
+.license-soon {
+  color: #8a5200;
+  background: #fff1d6;
+}
+
+.license-expired {
+  color: #8d1d30;
+  background: #ffe1e7;
+}
+
+.license-none {
+  color: var(--color-muted);
+  background: var(--color-light);
 }
 
 .loading-state,
@@ -555,7 +598,8 @@
   font-size: 1.35rem;
 }
 
-.vehicle-form {
+.vehicle-form,
+.client-form {
   display: grid;
   gap: 18px;
   padding: 22px;
@@ -568,6 +612,7 @@
 }
 
 .vehicle-form label,
+.client-form label,
 .full-field {
   display: grid;
   gap: 8px;
@@ -577,7 +622,9 @@
 
 .vehicle-form input,
 .vehicle-form select,
-.vehicle-form textarea {
+.vehicle-form textarea,
+.client-form input,
+.client-form textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -588,14 +635,17 @@
   background: var(--color-white);
 }
 
-.vehicle-form textarea {
+.vehicle-form textarea,
+.client-form textarea {
   min-height: 108px;
   resize: vertical;
 }
 
 .vehicle-form input:focus,
 .vehicle-form select:focus,
-.vehicle-form textarea:focus {
+.vehicle-form textarea:focus,
+.client-form input:focus,
+.client-form textarea:focus {
   border-color: var(--color-accent);
   outline: 3px solid rgba(233, 69, 96, 0.16);
 }
@@ -614,6 +664,15 @@
   color: var(--color-accent);
   font-weight: 700;
   background: #fff8fa;
+}
+
+.form-warning {
+  padding: 12px 14px;
+  border: 1px solid rgba(217, 140, 0, 0.34);
+  border-radius: 8px;
+  color: #8a5200;
+  font-weight: 800;
+  background: #fff8e1;
 }
 
 .modal-actions {
@@ -719,7 +778,8 @@
   }
 
   .modal-header,
-  .vehicle-form {
+  .vehicle-form,
+  .client-form {
     padding-right: 18px;
     padding-left: 18px;
   }
