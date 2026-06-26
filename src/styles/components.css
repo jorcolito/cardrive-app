@@ -401,6 +401,13 @@
   color: var(--color-navy);
 }
 
+.table-muted {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-muted);
+  font-size: 0.86rem;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -438,6 +445,27 @@
 
 .status-out-of-service,
 .status-unknown {
+  color: #8d1d30;
+  background: #ffe1e7;
+}
+
+.status-tentative {
+  color: #8a5200;
+  background: #fff1d6;
+}
+
+.status-confirmed {
+  color: #12633c;
+  background: #dff7ea;
+}
+
+.status-converted-to-contract {
+  color: #173f7a;
+  background: #e0ecff;
+}
+
+.status-cancelled,
+.status-no-show {
   color: #8d1d30;
   background: #ffe1e7;
 }
@@ -599,7 +627,8 @@
 }
 
 .vehicle-form,
-.client-form {
+.client-form,
+.reservation-form {
   display: grid;
   gap: 18px;
   padding: 22px;
@@ -613,6 +642,7 @@
 
 .vehicle-form label,
 .client-form label,
+.reservation-form label,
 .full-field {
   display: grid;
   gap: 8px;
@@ -624,7 +654,10 @@
 .vehicle-form select,
 .vehicle-form textarea,
 .client-form input,
-.client-form textarea {
+.client-form textarea,
+.reservation-form input,
+.reservation-form select,
+.reservation-form textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -636,7 +669,8 @@
 }
 
 .vehicle-form textarea,
-.client-form textarea {
+.client-form textarea,
+.reservation-form textarea {
   min-height: 108px;
   resize: vertical;
 }
@@ -645,7 +679,10 @@
 .vehicle-form select:focus,
 .vehicle-form textarea:focus,
 .client-form input:focus,
-.client-form textarea:focus {
+.client-form textarea:focus,
+.reservation-form input:focus,
+.reservation-form select:focus,
+.reservation-form textarea:focus {
   border-color: var(--color-accent);
   outline: 3px solid rgba(233, 69, 96, 0.16);
 }
@@ -779,7 +816,8 @@
 
   .modal-header,
   .vehicle-form,
-  .client-form {
+  .client-form,
+  .reservation-form {
     padding-right: 18px;
     padding-left: 18px;
   }

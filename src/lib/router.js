@@ -8,7 +8,7 @@ import { renderClientsPage, setupClientsPage } from '../pages/clients.js';
 import { renderContractsPage } from '../pages/contracts.js';
 import { renderDashboardPage } from '../pages/dashboard.js';
 import { renderLoginPage, setupLoginPage } from '../pages/login.js';
-import { renderReservationsPage } from '../pages/reservations.js';
+import { renderReservationsPage, setupReservationsPage } from '../pages/reservations.js';
 import { renderVehiclesPage, setupVehiclesPage } from '../pages/vehicles.js';
 
 const routes = {
@@ -33,6 +33,7 @@ const routes = {
     title: 'Reservas',
     subtitle: 'Seguimiento de solicitudes y entregas próximas',
     view: renderReservationsPage,
+    setup: setupReservationsPage,
   },
   '/contracts': {
     title: 'Contratos',
