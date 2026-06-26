@@ -5,7 +5,7 @@ import { renderToastHost, showToast } from '../components/toast.js';
 import { renderApprovalsPage } from '../pages/approvals.js';
 import { renderCashboxPage } from '../pages/cashbox.js';
 import { renderClientsPage, setupClientsPage } from '../pages/clients.js';
-import { renderContractsPage } from '../pages/contracts.js';
+import { renderContractsPage, setupContractsPage } from '../pages/contracts.js';
 import { renderDashboardPage } from '../pages/dashboard.js';
 import { renderLoginPage, setupLoginPage } from '../pages/login.js';
 import { renderReservationsPage, setupReservationsPage } from '../pages/reservations.js';
@@ -39,6 +39,7 @@ const routes = {
     title: 'Contratos',
     subtitle: 'Documentos preparados para futuras operaciones',
     view: renderContractsPage,
+    setup: setupContractsPage,
   },
   '/approvals': {
     title: 'Aprobaciones',
