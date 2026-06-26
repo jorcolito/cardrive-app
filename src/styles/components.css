@@ -483,7 +483,11 @@
 
 .status-cancellation-requested,
 .status-pending,
-.status-partial {
+.status-partial,
+.status-partially-paid,
+.status-discount-requested,
+.status-discount-approved,
+.status-balance-pending {
   color: #8a5200;
   background: #fff1d6;
 }
@@ -652,7 +656,8 @@
 .vehicle-form,
 .client-form,
 .reservation-form,
-.contract-form {
+.contract-form,
+.return-form {
   display: grid;
   gap: 18px;
   padding: 22px;
@@ -668,6 +673,7 @@
 .client-form label,
 .reservation-form label,
 .contract-form label,
+.return-form label,
 .full-field {
   display: grid;
   gap: 8px;
@@ -685,7 +691,10 @@
 .reservation-form textarea,
 .contract-form input,
 .contract-form select,
-.contract-form textarea {
+.contract-form textarea,
+.return-form input,
+.return-form select,
+.return-form textarea {
   width: 100%;
   min-height: 44px;
   padding: 10px 12px;
@@ -699,7 +708,8 @@
 .vehicle-form textarea,
 .client-form textarea,
 .reservation-form textarea,
-.contract-form textarea {
+.contract-form textarea,
+.return-form textarea {
   min-height: 108px;
   resize: vertical;
 }
@@ -714,7 +724,10 @@
 .reservation-form textarea:focus,
 .contract-form input:focus,
 .contract-form select:focus,
-.contract-form textarea:focus {
+.contract-form textarea:focus,
+.return-form input:focus,
+.return-form select:focus,
+.return-form textarea:focus {
   border-color: var(--color-accent);
   outline: 3px solid rgba(233, 69, 96, 0.16);
 }
@@ -747,6 +760,40 @@
   color: #8a5200;
   font-weight: 800;
   background: #fff8e1;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  margin: 0;
+  border-radius: 8px;
+  background: var(--color-light);
+}
+
+.detail-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.detail-list dt {
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.detail-list dd {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.table-action {
+  min-height: 36px;
+  padding: 8px 10px;
+  white-space: nowrap;
 }
 
 .modal-actions {
@@ -855,12 +902,14 @@
   .vehicle-form,
   .client-form,
   .reservation-form,
-  .contract-form {
+  .contract-form,
+  .return-form {
     padding-right: 18px;
     padding-left: 18px;
   }
 
-  .form-grid {
+  .form-grid,
+  .detail-list {
     grid-template-columns: 1fr;
   }
 

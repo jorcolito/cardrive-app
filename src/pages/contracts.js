@@ -9,9 +9,11 @@ const contractStatusLabels = {
 
 const financialStatusLabels = {
   PENDING: 'Pendiente',
-  PARTIAL: 'Parcial',
   PAID: 'Pagado',
-  OVERDUE: 'Vencido',
+  PARTIALLY_PAID: 'Parcialmente pagado',
+  DISCOUNT_REQUESTED: 'Descuento solicitado',
+  DISCOUNT_APPROVED: 'Descuento aprobado',
+  BALANCE_PENDING: 'Saldo pendiente',
 };
 
 const fuelLabels = {
@@ -28,6 +30,7 @@ let vehicles = [];
 let reservations = [];
 let showContractsToast;
 let contractsPageController;
+let selectedReturnContract;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -110,6 +113,10 @@ function toDateTimeInputValue(value) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function getCurrentDateTimeInputValue() {
+  return toDateTimeInputValue(new Date().toISOString());
+}
+
 function formatDateTime(value) {
   if (!value) {
     return '—';
@@ -175,6 +182,14 @@ function getFinancialStatusLabel(status) {
 
 function getFuelLabel(fuel) {
   return fuelLabels[fuel] ?? '—';
+}
+
+function getContractClient(contract) {
+  return contract?.client ?? {};
+}
+
+function getContractVehicle(contract) {
+  return contract?.vehicle ?? {};
 }
 
 function getClientLabel(client) {
@@ -248,6 +263,9 @@ function renderContractRows(items) {
       const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ');
       const statusClass = getStatusClass(contract.status);
       const financialClass = getStatusClass(contract.financial_status);
+      const action = contract.status === 'ACTIVE'
+        ? `<button class="secondary-button table-action" type="button" data-contract-return="${escapeHtml(contract.id)}">Registrar devolución</button>`
+        : '—';
 
       return `
         <tr>
@@ -274,6 +292,7 @@ function renderContractRows(items) {
           <td data-label="Total">${formatCurrency(contract.total_amount)}</td>
           <td data-label="Pagado">${formatCurrency(contract.paid_amount)}</td>
           <td data-label="Notas">${escapeHtml(contract.notes || '—')}</td>
+          <td data-label="Acciones">${action}</td>
         </tr>
       `;
     })
@@ -320,6 +339,7 @@ function renderContracts(items) {
             <th>Total</th>
             <th>Pagado</th>
             <th>Notas</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -452,6 +472,162 @@ function showContractFormError(message) {
 
   formError.textContent = message;
   formError.hidden = !message;
+}
+
+function setReturnFieldError(fieldName, message) {
+  const field = document.querySelector(`[data-return-error="${fieldName}"]`);
+
+  if (field) {
+    field.textContent = message;
+  }
+}
+
+function clearReturnFormErrors() {
+  document.querySelectorAll('[data-return-error]').forEach((field) => {
+    field.textContent = '';
+  });
+
+  const formError = document.querySelector('#return-form-error');
+
+  if (formError) {
+    formError.textContent = '';
+    formError.hidden = true;
+  }
+}
+
+function showReturnFormError(message) {
+  const formError = document.querySelector('#return-form-error');
+
+  if (!formError) {
+    return;
+  }
+
+  formError.textContent = message;
+  formError.hidden = !message;
+}
+
+function renderReturnContractSummary(contract) {
+  const client = getContractClient(contract);
+  const vehicle = getContractVehicle(contract);
+  const vehicleName = [vehicle.brand, vehicle.model].filter(Boolean).join(' ');
+
+  return `
+    <dl class="detail-list">
+      <div>
+        <dt>Número</dt>
+        <dd>${escapeHtml(contract.sequential_number || '—')}</dd>
+      </div>
+      <div>
+        <dt>Cliente</dt>
+        <dd>${escapeHtml(client.full_name || 'Sin cliente')}</dd>
+      </div>
+      <div>
+        <dt>Vehículo</dt>
+        <dd>${escapeHtml([vehicle.plate, vehicleName].filter(Boolean).join(' · ') || 'Sin vehículo')}</dd>
+      </div>
+      <div>
+        <dt>Salida</dt>
+        <dd>${formatDateTime(contract.start_at)}</dd>
+      </div>
+      <div>
+        <dt>Retorno esperado</dt>
+        <dd>${formatDateTime(contract.expected_end_at)}</dd>
+      </div>
+      <div>
+        <dt>Km salida</dt>
+        <dd>${formatNumber(contract.start_km)}</dd>
+      </div>
+      <div>
+        <dt>Combustible salida</dt>
+        <dd>${escapeHtml(getFuelLabel(contract.fuel_out))}</dd>
+      </div>
+      <div>
+        <dt>Tarifa diaria</dt>
+        <dd>${formatCurrency(contract.daily_rate)}</dd>
+      </div>
+    </dl>
+  `;
+}
+
+function updateReturnSummary() {
+  const summary = document.querySelector('#return-summary');
+
+  if (!summary || !selectedReturnContract) {
+    return;
+  }
+
+  const endKm = Number(document.querySelector('[name="end_km"]')?.value);
+  const realEndAt = document.querySelector('[name="real_end_at"]')?.value ?? '';
+  const startKm = Number(selectedReturnContract.start_km);
+  const realEndDate = parseLocalDateTime(realEndAt);
+  const expectedEndDate = new Date(selectedReturnContract.expected_end_at);
+  const parts = [];
+
+  if (Number.isFinite(endKm) && Number.isFinite(startKm)) {
+    parts.push(`Km recorridos: ${formatNumber(endKm - startKm)}`);
+  }
+
+  if (
+    realEndDate &&
+    selectedReturnContract.expected_end_at &&
+    !Number.isNaN(expectedEndDate.getTime()) &&
+    realEndDate.getTime() > expectedEndDate.getTime()
+  ) {
+    parts.push('Aviso: el retorno está tarde respecto al retorno esperado.');
+  }
+
+  summary.textContent = parts.join(' ');
+  summary.hidden = !parts.length;
+}
+
+function getReturnFormPayload(form) {
+  const formData = new FormData(form);
+  const notes = formData.get('return_notes')?.toString().trim();
+
+  return {
+    real_end_at: formData.get('real_end_at')?.toString() ?? '',
+    end_km: Number(formData.get('end_km')),
+    fuel_in: formData.get('fuel_in')?.toString() ?? '',
+    return_notes: notes || null,
+  };
+}
+
+function validateReturnPayload(payload) {
+  let isValid = true;
+  const startDate = parseLocalDateTime(toDateTimeInputValue(selectedReturnContract?.start_at));
+  const realEndDate = parseLocalDateTime(payload.real_end_at);
+  const startKm = Number(selectedReturnContract?.start_km);
+
+  clearReturnFormErrors();
+
+  if (!realEndDate) {
+    setReturnFieldError('real_end_at', 'La fecha/hora real de devolución es obligatoria.');
+    isValid = false;
+  }
+
+  if (!Number.isFinite(payload.end_km)) {
+    setReturnFieldError('end_km', 'El km final es obligatorio.');
+    isValid = false;
+  }
+
+  if (Number.isFinite(payload.end_km) && Number.isFinite(startKm) && payload.end_km < startKm) {
+    setReturnFieldError('end_km', 'El km final no puede ser menor que el km de salida.');
+    isValid = false;
+  }
+
+  if (!payload.fuel_in) {
+    setReturnFieldError('fuel_in', 'El combustible de entrada es obligatorio.');
+    isValid = false;
+  }
+
+  if (realEndDate && startDate && realEndDate.getTime() < startDate.getTime()) {
+    setReturnFieldError('real_end_at', 'La devolución real no puede ser menor que la salida.');
+    isValid = false;
+  }
+
+  updateReturnSummary();
+
+  return isValid;
 }
 
 function showReservationDeposit(reservation) {
@@ -708,6 +884,21 @@ function setContractFormLoading(isLoading) {
   }
 }
 
+function setReturnFormLoading(isLoading) {
+  const form = document.querySelector('#return-form');
+  const submitButton = document.querySelector('#save-return-button');
+
+  if (form) {
+    form.querySelectorAll('input, select, textarea, button').forEach((field) => {
+      field.disabled = isLoading;
+    });
+  }
+
+  if (submitButton) {
+    submitButton.textContent = isLoading ? 'Guardando...' : 'Cerrar contrato';
+  }
+}
+
 function openContractModal() {
   const modal = document.querySelector('#contract-modal');
 
@@ -732,6 +923,50 @@ function closeContractModal() {
   modal.hidden = true;
   document.body.classList.remove('modal-open');
   resetContractForm();
+}
+
+function openReturnModal(contractId) {
+  const modal = document.querySelector('#return-modal');
+  const contract = contracts.find((item) => String(item.id) === String(contractId));
+
+  if (!modal || !contract) {
+    return;
+  }
+
+  selectedReturnContract = contract;
+  clearReturnFormErrors();
+
+  const summary = document.querySelector('#return-contract-summary');
+  const form = document.querySelector('#return-form');
+
+  if (summary) {
+    summary.innerHTML = renderReturnContractSummary(contract);
+  }
+
+  if (form) {
+    form.reset();
+    form.querySelector('[name="real_end_at"]').value = getCurrentDateTimeInputValue();
+    form.querySelector('[name="end_km"]').value = contract.start_km ?? '';
+  }
+
+  updateReturnSummary();
+  modal.hidden = false;
+  document.body.classList.add('modal-open');
+  document.querySelector('[name="end_km"]')?.focus();
+}
+
+function closeReturnModal() {
+  const modal = document.querySelector('#return-modal');
+
+  if (!modal) {
+    return;
+  }
+
+  modal.hidden = true;
+  selectedReturnContract = null;
+  document.body.classList.remove('modal-open');
+  document.querySelector('#return-form')?.reset();
+  clearReturnFormErrors();
 }
 
 async function handleCreateContract(event) {
@@ -769,6 +1004,44 @@ async function handleCreateContract(event) {
   closeContractModal();
   await Promise.all([loadContractOptions(), loadContracts()]);
   showContractsToast?.(`Contrato ${data?.[0]?.sequential_number ?? ''} creado correctamente.`);
+}
+
+async function handleCloseContract(event) {
+  event.preventDefault();
+
+  if (!selectedReturnContract) {
+    showReturnFormError('No se encontró el contrato seleccionado.');
+    return;
+  }
+
+  const form = event.currentTarget;
+  const payload = getReturnFormPayload(form);
+
+  if (!validateReturnPayload(payload)) {
+    return;
+  }
+
+  setReturnFormLoading(true);
+  showReturnFormError('');
+
+  const { error } = await supabase.rpc('close_contract_from_app', {
+    p_contract_id: selectedReturnContract.id,
+    p_real_end_at: payload.real_end_at,
+    p_end_km: payload.end_km,
+    p_fuel_in: payload.fuel_in,
+    p_return_notes: payload.return_notes,
+  });
+
+  setReturnFormLoading(false);
+
+  if (error) {
+    showReturnFormError(error.message);
+    return;
+  }
+
+  closeReturnModal();
+  await Promise.all([loadContractOptions(), loadContracts()]);
+  showContractsToast?.('Contrato cerrado correctamente');
 }
 
 function renderContractModal() {
@@ -864,6 +1137,62 @@ function renderContractModal() {
   `;
 }
 
+function renderReturnModal() {
+  return `
+    <div class="modal-backdrop" id="return-modal" hidden>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="return-modal-title">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Devolución</p>
+            <h2 id="return-modal-title">Registrar devolución</h2>
+          </div>
+          <button class="icon-button" id="close-return-modal" type="button" aria-label="Cerrar modal">×</button>
+        </div>
+
+        <form class="return-form" id="return-form" novalidate>
+          <div class="form-alert" id="return-form-error" hidden></div>
+          <div id="return-contract-summary"></div>
+          <div class="form-warning" id="return-summary" hidden></div>
+
+          <div class="form-grid">
+            <label>
+              Fecha/hora real de devolución
+              <input name="real_end_at" type="datetime-local" />
+              <span class="field-error" data-return-error="real_end_at"></span>
+            </label>
+
+            <label>
+              Km final
+              <input name="end_km" type="number" min="0" step="1" inputmode="numeric" />
+              <span class="field-error" data-return-error="end_km"></span>
+            </label>
+
+            <label>
+              Combustible de entrada
+              <select name="fuel_in">
+                <option value="">Selecciona combustible</option>
+                ${renderFuelOptions()}
+              </select>
+              <span class="field-error" data-return-error="fuel_in"></span>
+            </label>
+          </div>
+
+          <label class="full-field">
+            Notas de devolución
+            <textarea name="return_notes" rows="4"></textarea>
+            <span class="field-error" data-return-error="return_notes"></span>
+          </label>
+
+          <div class="modal-actions">
+            <button class="secondary-button" id="cancel-return-modal" type="button">Cancelar</button>
+            <button class="primary-button" id="save-return-button" type="submit">Cerrar contrato</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 export function renderContractsPage() {
   return `
     <section class="module-page">
@@ -877,6 +1206,7 @@ export function renderContractsPage() {
 
       <div id="contracts-results"></div>
       ${renderContractModal()}
+      ${renderReturnModal()}
     </section>
   `;
 }
@@ -894,14 +1224,39 @@ export async function setupContractsPage({ showToast }) {
   document.querySelector('#contract-form')?.addEventListener('submit', handleCreateContract, { signal });
   document.querySelector('#contract-reservation')?.addEventListener('change', handleReservationSelection, { signal });
   document.querySelector('#contract-vehicle')?.addEventListener('change', updateVehicleDerivedFields, { signal });
+  document.querySelector('#close-return-modal')?.addEventListener('click', closeReturnModal, { signal });
+  document.querySelector('#cancel-return-modal')?.addEventListener('click', closeReturnModal, { signal });
+  document.querySelector('#return-form')?.addEventListener('submit', handleCloseContract, { signal });
+  document.querySelector('[name="real_end_at"]')?.addEventListener('input', updateReturnSummary, { signal });
+  document.querySelector('[name="end_km"]')?.addEventListener('input', updateReturnSummary, { signal });
+  document.querySelector('#contracts-results')?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-contract-return]');
+
+    if (button) {
+      openReturnModal(button.dataset.contractReturn);
+    }
+  }, { signal });
   document.querySelector('#contract-modal')?.addEventListener('click', (event) => {
     if (event.target.id === 'contract-modal') {
       closeContractModal();
     }
   }, { signal });
+  document.querySelector('#return-modal')?.addEventListener('click', (event) => {
+    if (event.target.id === 'return-modal') {
+      closeReturnModal();
+    }
+  }, { signal });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !document.querySelector('#contract-modal')?.hidden) {
+    if (event.key !== 'Escape') {
+      return;
+    }
+
+    if (!document.querySelector('#contract-modal')?.hidden) {
       closeContractModal();
+    }
+
+    if (!document.querySelector('#return-modal')?.hidden) {
+      closeReturnModal();
     }
   }, { signal });
 
